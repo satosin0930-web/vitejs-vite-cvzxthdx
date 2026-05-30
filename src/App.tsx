@@ -49,6 +49,23 @@ function parseInstagramUrl(url: string): { accountId: string; accountName: strin
   return null;
 }
 
+// ── アカウント保存・読み込み ──────────────────────────
+const STORAGE_KEY = "insta_accounts_v1";
+
+function saveAccount(account: Account) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const idx = saved.findIndex((a: Account) => a.accountId === account.accountId);
+    if (idx >= 0) saved[idx] = account;
+    else saved.unshift(account);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(saved.slice(0, 10)));
+  } catch {}
+}
+
+function loadAccounts(): Account[] {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
+}
+
 function CopyBtn({ text }: { text: string }) {
   const [ok, setOk] = useState(false);
   return (
@@ -238,6 +255,7 @@ interface GeneratedResult {
 
 export default function App() {
   const [step, setStep] = useState(1);
+  const [savedAccounts, setSavedAccounts] = useState<Account[]>(() => loadAccounts());
   const [account, setAccount] = useState<Account>({
     accountName: "", accountId: "", brandName: "", genre: "",
     followers: "", hashtags: "", themeColor: "#E63946", postNote: "", todayContent: "",
@@ -368,18 +386,41 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
                   const pasted = e.clipboardData.getData("text");
                   const parsed = parseInstagramUrl(pasted);
                   if (parsed) {
-                    setAccount(a => ({ ...a, accountId: parsed.accountId, accountName: parsed.accountName }));
+                    const saved = loadAccounts().find(a => a.accountId === parsed.accountId);
+                    if (saved) {
+                      setAccount(saved);
+                    } else {
+                      setAccount(a => ({ ...a, accountId: parsed.accountId, accountName: parsed.accountName }));
+                    }
                   }
                 }}
                 onChange={(e) => {
                   const parsed = parseInstagramUrl(e.target.value);
                   if (parsed) {
-                    setAccount(a => ({ ...a, accountId: parsed.accountId, accountName: parsed.accountName }));
+                    const saved = loadAccounts().find(a => a.accountId === parsed.accountId);
+                    if (saved) {
+                      setAccount(saved);
+                    } else {
+                      setAccount(a => ({ ...a, accountId: parsed.accountId, accountName: parsed.accountName }));
+                    }
                   }
                 }}
               />
             </div>
-            <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>URLを貼ると下のID・名前が自動で入ります</div>
+            <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>URLを貼ると登録済みの情報が自動で入ります（初回は手入力→次回から自動）</div>
+            {savedAccounts.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 500, color: "#378ADD", marginBottom: 6 }}>保存済みアカウント（タップで選択）</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
+                  {savedAccounts.map(a => (
+                    <div key={a.accountId} onClick={() => setAccount(a)}
+                      style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, background: account.accountId === a.accountId ? "#378ADD" : "#e8f4ff", color: account.accountId === a.accountId ? "#fff" : "#378ADD", cursor: "pointer", border: "0.5px solid #b3d9ff" }}>
+                      @{a.accountId}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div style={{ display: "grid", gap: 12 }}>
             {([
@@ -413,7 +454,7 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
               </div>
             )}
           </div>
-          <button onClick={() => { if (account.accountName && account.accountId) setStep(2); }} disabled={!account.accountName || !account.accountId}
+          <button disabled={!account.accountName || !account.accountId}
             style={{ width: "100%", marginTop: 20, padding: 13, background: account.accountName && account.accountId ? account.themeColor : "#ddd", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
             次へ：ジャンル選択 →
           </button>
