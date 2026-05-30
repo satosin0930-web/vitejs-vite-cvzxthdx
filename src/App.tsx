@@ -37,6 +37,18 @@ function getStage(followers: string) {
   return FOLLOWER_STAGES[3];
 }
 
+function parseInstagramUrl(url: string): { accountId: string; accountName: string } | null {
+  try {
+    const match = url.match(/instagram\.com\/([a-zA-Z0-9._]+)\/?/);
+    if (match && match[1] && match[1] !== "p" && match[1] !== "reel" && match[1] !== "stories") {
+      const accountId = match[1];
+      const accountName = accountId.replace(/[._]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+      return { accountId, accountName };
+    }
+  } catch {}
+  return null;
+}
+
 function CopyBtn({ text }: { text: string }) {
   const [ok, setOk] = useState(false);
   return (
@@ -343,6 +355,32 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
       {/* STEP 1 */}
       {step === 1 && (
         <div style={{ background: "#fff", borderRadius: 12, padding: 20 }}>
+          {/* URL自動入力 */}
+          <div style={{ marginBottom: 16, padding: "12px 14px", background: "#f0f8ff", borderRadius: 10, border: "1px solid #b3d9ff" }}>
+            <label style={{ fontSize: 12, fontWeight: 500, color: "#378ADD", display: "block", marginBottom: 6 }}>
+              📱 インスタのURLを貼るだけで自動入力
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                style={{ flex: 1, fontSize: 13, padding: "8px 10px", border: "0.5px solid #b3d9ff", borderRadius: 8, background: "#fff", color: "#111" }}
+                placeholder="https://www.instagram.com/アカウント名/"
+                onPaste={(e) => {
+                  const pasted = e.clipboardData.getData("text");
+                  const parsed = parseInstagramUrl(pasted);
+                  if (parsed) {
+                    setAccount(a => ({ ...a, accountId: parsed.accountId, accountName: parsed.accountName }));
+                  }
+                }}
+                onChange={(e) => {
+                  const parsed = parseInstagramUrl(e.target.value);
+                  if (parsed) {
+                    setAccount(a => ({ ...a, accountId: parsed.accountId, accountName: parsed.accountName }));
+                  }
+                }}
+              />
+            </div>
+            <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>URLを貼ると下のID・名前が自動で入ります</div>
+          </div>
           <div style={{ display: "grid", gap: 12 }}>
             {([
               { key: "accountName", label: "アカウント表示名", placeholder: "例：レコルトバッテリー館", req: true },
