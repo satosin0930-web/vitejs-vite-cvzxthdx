@@ -85,8 +85,8 @@ interface SlideData {
   iscover?: boolean;
 }
 
-function ImageCard({ slide, brand, themeColor, accountId, index }: {
-  slide: SlideData; brand: string; themeColor: string; accountId: string; index: number;
+function ImageCard({ slide, brand, themeColor, accountId, index, uploadedImages }: {
+  slide: SlideData; brand: string; themeColor: string; accountId: string; index: number; uploadedImages: UploadedImage[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -99,16 +99,19 @@ function ImageCard({ slide, brand, themeColor, accountId, index }: {
     canvas.width = W;
     canvas.height = H;
 
-    // 背景
-    ctx.fillStyle = "#0D1117";
-    ctx.fillRect(0, 0, W, H);
+    // アップロード画像を探す
+    const bgImg = uploadedImages.find(img => img.placement === "background");
+    const specificImg = uploadedImages.find(img => img.placement === "specific" && img.slideIndex === index);
+    const autoImg = uploadedImages.find(img => img.placement === "auto");
+    const useImg = specificImg || (index > 0 && index < 8 ? autoImg : null) || bgImg;
 
-    // グラデーション装飾
-    const grad = ctx.createLinearGradient(0, 0, W, H);
-    grad.addColorStop(0, themeColor + "22");
-    grad.addColorStop(1, "#0D1117");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
+    const drawContent = () => {
+      // グラデーション装飾
+      const grad = ctx.createLinearGradient(0, 0, W, H);
+      grad.addColorStop(0, themeColor + "22");
+      grad.addColorStop(1, "#0D1117");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
 
     // 上部バー
     ctx.fillStyle = themeColor;
@@ -207,8 +210,37 @@ function ImageCard({ slide, brand, themeColor, accountId, index }: {
     // 下部ライン
     ctx.fillStyle = themeColor + "66";
     ctx.fillRect(0, H - 6, W, 6);
+    }; // drawContent end
 
-  }, [slide, brand, themeColor, accountId, index]);
+    // 背景画像がある場合
+    if (useImg) {
+      const img = new Image();
+      img.onload = () => {
+        // 背景に画像を描画（カバーフィット）
+        ctx.fillStyle = "#0D1117";
+        ctx.fillRect(0, 0, W, H);
+        const scale = Math.max(W / img.width, H / img.height);
+        const sw = img.width * scale;
+        const sh = img.height * scale;
+        const sx = (W - sw) / 2;
+        const sy = (H - sh) / 2;
+        ctx.globalAlpha = bgImg && !specificImg && !autoImg ? 1.0 : 0.45;
+        ctx.drawImage(img, sx, sy, sw, sh);
+        ctx.globalAlpha = 1.0;
+        // 暗いオーバーレイ
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillRect(0, 0, W, H);
+        drawContent();
+      };
+      img.src = useImg.url;
+    } else {
+      // 背景色
+      ctx.fillStyle = "#0D1117";
+      ctx.fillRect(0, 0, W, H);
+      drawContent();
+    }
+
+  }, [slide, brand, themeColor, accountId, index, uploadedImages]);
 
   const download = () => {
     const canvas = canvasRef.current;
@@ -244,6 +276,13 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 // ── メインアプリ ──────────────────────────────────────
+interface UploadedImage {
+  file: File;
+  url: string;
+  placement: "auto" | "specific" | "background";
+  slideIndex?: number;
+}
+
 interface Account {
   accountName: string; accountId: string; brandName: string; genre: string;
   followers: string; hashtags: string; themeColor: string; postNote: string; todayContent: string;
@@ -256,6 +295,7 @@ interface GeneratedResult {
 export default function App() {
   const [step, setStep] = useState(1);
   const [savedAccounts, setSavedAccounts] = useState<Account[]>(() => loadAccounts());
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [account, setAccount] = useState<Account>({
     accountName: "", accountId: "", brandName: "", genre: "",
     followers: "", hashtags: "", themeColor: "#E63946", postNote: "", todayContent: "",
@@ -507,6 +547,56 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
               value={account.todayContent}
               onChange={e => setAccount(a => ({ ...a, todayContent: e.target.value }))} />
           </div>
+          {/* 画像アップロード */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 8 }}>
+              🖼️ 画像をアップロード（任意・最大10枚）
+            </label>
+            <label style={{ display: "inline-block", padding: "8px 16px", background: account.themeColor, color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+              ＋ 画像を選ぶ
+              <input type="file" accept="image/*" multiple style={{ display: "none" }}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  const newImgs = files.slice(0, 10 - uploadedImages.length).map(file => ({
+                    file, url: URL.createObjectURL(file), placement: "auto" as const,
+                  }));
+                  setUploadedImages(prev => [...prev, ...newImgs].slice(0, 10));
+                }} />
+            </label>
+            {uploadedImages.length > 0 && (
+              <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
+                {uploadedImages.map((img, i) => (
+                  <div key={i} style={{ border: "0.5px solid #ddd", borderRadius: 10, overflow: "hidden", background: "#fff" }}>
+                    <div style={{ position: "relative" }}>
+                      <img src={img.url} alt="" style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", display: "block" }} />
+                      <button onClick={() => setUploadedImages(prev => prev.filter((_, j) => j !== i))}
+                        style={{ position: "absolute", top: 4, right: 4, width: 22, height: 22, borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                    </div>
+                    <div style={{ padding: "8px 8px 10px" }}>
+                      <div style={{ fontSize: 11, fontWeight: 500, color: "#444", marginBottom: 6 }}>使い方</div>
+                      <select value={img.placement}
+                        onChange={e => setUploadedImages(prev => prev.map((im, j) => j === i ? { ...im, placement: e.target.value as "auto"|"specific"|"background" } : im))}
+                        style={{ width: "100%", fontSize: 11, padding: "4px 6px", border: "0.5px solid #ddd", borderRadius: 6, marginBottom: 6 }}>
+                        <option value="auto">AIにおまかせ</option>
+                        <option value="specific">特定のスライドに</option>
+                        <option value="background">全スライドの背景</option>
+                      </select>
+                      {img.placement === "specific" && (
+                        <select value={img.slideIndex ?? 0}
+                          onChange={e => setUploadedImages(prev => prev.map((im, j) => j === i ? { ...im, slideIndex: parseInt(e.target.value) } : im))}
+                          style={{ width: "100%", fontSize: 11, padding: "4px 6px", border: "0.5px solid #ddd", borderRadius: 6 }}>
+                          {Array.from({ length: 10 }, (_, k) => (
+                            <option key={k} value={k}>{k + 1}枚目</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {error && <div style={{ color: "#E63946", fontSize: 12, marginBottom: 12, padding: "8px 12px", background: "#fff0f0", borderRadius: 8 }}>{error}</div>}
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => setStep(2)} style={{ flex: 1, padding: 12, background: "transparent", border: "0.5px solid #ddd", borderRadius: 10, fontSize: 13, cursor: "pointer", color: "#666" }}>← 戻る</button>
@@ -548,7 +638,7 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
                 {result.slides.map((slide, i) => (
-                  <ImageCard key={i} slide={slide} brand={brand} themeColor={account.themeColor} accountId={account.accountId} index={i} />
+                  <ImageCard key={i} slide={slide} brand={brand} themeColor={account.themeColor} accountId={account.accountId} index={i} uploadedImages={uploadedImages} />
                 ))}
               </div>
             </div>
