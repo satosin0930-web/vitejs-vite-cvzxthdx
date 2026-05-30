@@ -49,19 +49,15 @@ function parseInstagramUrl(url: string): { accountId: string; accountName: strin
   return null;
 }
 
-// ── アカウント保存・読み込み ──────────────────────────
 const STORAGE_KEY = "insta_accounts_v1";
-
 function saveAccount(account: Account) {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
     const idx = saved.findIndex((a: Account) => a.accountId === account.accountId);
-    if (idx >= 0) saved[idx] = account;
-    else saved.unshift(account);
+    if (idx >= 0) saved[idx] = account; else saved.unshift(account);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(saved.slice(0, 10)));
   } catch {}
 }
-
 function loadAccounts(): Account[] {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
 }
@@ -76,230 +72,114 @@ function CopyBtn({ text }: { text: string }) {
   );
 }
 
-// ── Canvas画像カード ──────────────────────────────────
-interface SlideData {
-  title: string;
-  lines: string[];
-  badge?: string;
-  badgeColor?: string;
-  iscover?: boolean;
+interface SlideData { title: string; lines: string[]; badge?: string; badgeColor?: string; iscover?: boolean; }
+interface UploadedImage { file: File; url: string; placement: "auto" | "specific" | "background"; slideIndex?: number; }
+interface Account { accountName: string; accountId: string; brandName: string; genre: string; followers: string; hashtags: string; themeColor: string; postNote: string; todayContent: string; }
+interface GeneratedResult { caption: string; hashtags: string; slides: SlideData[]; }
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r); ctx.closePath();
 }
 
 function ImageCard({ slide, brand, themeColor, accountId, index, uploadedImages }: {
   slide: SlideData; brand: string; themeColor: string; accountId: string; index: number; uploadedImages: UploadedImage[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d"); if (!ctx) return;
     const W = 540, H = 675;
-    canvas.width = W;
-    canvas.height = H;
-
-    // アップロード画像を探す
+    canvas.width = W; canvas.height = H;
     const bgImg = uploadedImages.find(img => img.placement === "background");
     const specificImg = uploadedImages.find(img => img.placement === "specific" && img.slideIndex === index);
     const autoImg = uploadedImages.find(img => img.placement === "auto");
     const useImg = specificImg || (index > 0 && index < 8 ? autoImg : null) || bgImg;
-
     const drawContent = () => {
-      // グラデーション装飾
       const grad = ctx.createLinearGradient(0, 0, W, H);
-      grad.addColorStop(0, themeColor + "22");
-      grad.addColorStop(1, "#0D1117");
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, W, H);
-
-    // 上部バー
-    ctx.fillStyle = themeColor;
-    ctx.fillRect(0, 0, W, 8);
-
-    // ブランド名（中央・テーマカラー）
-    ctx.fillStyle = themeColor;
-    ctx.font = "bold 22px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(brand, W / 2, 50);
-
-    // スライド番号
-    ctx.fillStyle = "rgba(255,255,255,0.3)";
-    ctx.font = "14px sans-serif";
-    ctx.textAlign = "right";
-    ctx.fillText(`${index + 1} / 10`, W - 20, 50);
-
-    if (slide.iscover) {
-      // 表紙デザイン
-      ctx.fillStyle = "#fff";
-      ctx.font = "bold 38px sans-serif";
-      ctx.textAlign = "center";
-      const titleLines = slide.title.match(/.{1,12}/g) || [slide.title];
-      titleLines.forEach((line, i) => {
-        ctx.fillText(line, W / 2, 200 + i * 50);
-      });
-      // 装飾ライン
-      ctx.strokeStyle = themeColor;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(80, 280 + titleLines.length * 50);
-      ctx.lineTo(W - 80, 280 + titleLines.length * 50);
-      ctx.stroke();
-      // サブライン
-      slide.lines.forEach((line, i) => {
-        ctx.fillStyle = "rgba(255,255,255,0.7)";
-        ctx.font = "18px sans-serif";
-        ctx.fillText(line, W / 2, 340 + titleLines.length * 50 + i * 32);
-      });
-    } else {
-      // 通常スライド
-      // タイトルボックス
-      ctx.fillStyle = themeColor + "33";
-      roundRect(ctx, 30, 70, W - 60, 70, 10);
-      ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.font = "bold 24px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(slide.title, W / 2, 115);
-
-      // コンテンツライン
-      slide.lines.forEach((line, i) => {
-        const y = 190 + i * 52;
-        if (line.startsWith("✅") || line.startsWith("📌") || line.startsWith("💡") || line.startsWith("⭐") || line.startsWith("🔥")) {
-          ctx.fillStyle = themeColor + "22";
-          roundRect(ctx, 30, y - 26, W - 60, 42, 8);
-          ctx.fill();
-          ctx.fillStyle = "#fff";
-          ctx.font = "bold 17px sans-serif";
-          ctx.textAlign = "left";
-          ctx.fillText(line, 50, y);
-        } else {
-          ctx.fillStyle = "rgba(255,255,255,0.75)";
-          ctx.font = "16px sans-serif";
-          ctx.textAlign = "left";
-          // 長い行は折り返し
-          const maxW = W - 100;
-          if (ctx.measureText(line).width > maxW) {
-            const half = Math.floor(line.length / 2);
-            ctx.fillText(line.slice(0, half), 50, y);
-            ctx.fillText(line.slice(half), 50, y + 22);
+      grad.addColorStop(0, themeColor + "22"); grad.addColorStop(1, "#0D1117");
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = themeColor; ctx.fillRect(0, 0, W, 8);
+      ctx.fillStyle = themeColor; ctx.font = "bold 22px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText(brand, W / 2, 50);
+      ctx.fillStyle = "rgba(255,255,255,0.3)"; ctx.font = "14px sans-serif"; ctx.textAlign = "right";
+      ctx.fillText(`${index + 1} / 10`, W - 20, 50);
+      if (slide.iscover) {
+        ctx.fillStyle = "#fff"; ctx.font = "bold 38px sans-serif"; ctx.textAlign = "center";
+        const titleLines = slide.title.match(/.{1,12}/g) || [slide.title];
+        titleLines.forEach((line, i) => { ctx.fillText(line, W / 2, 200 + i * 50); });
+        ctx.strokeStyle = themeColor; ctx.lineWidth = 2; ctx.beginPath();
+        ctx.moveTo(80, 280 + titleLines.length * 50); ctx.lineTo(W - 80, 280 + titleLines.length * 50); ctx.stroke();
+        slide.lines.forEach((line, i) => {
+          ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.font = "18px sans-serif";
+          ctx.fillText(line, W / 2, 340 + titleLines.length * 50 + i * 32);
+        });
+      } else {
+        ctx.fillStyle = themeColor + "33"; roundRect(ctx, 30, 70, W - 60, 70, 10); ctx.fill();
+        ctx.fillStyle = "#fff"; ctx.font = "bold 24px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText(slide.title, W / 2, 115);
+        slide.lines.forEach((line, i) => {
+          const y = 190 + i * 52;
+          if (line.startsWith("✅") || line.startsWith("📌") || line.startsWith("💡") || line.startsWith("⭐") || line.startsWith("🔥")) {
+            ctx.fillStyle = themeColor + "22"; roundRect(ctx, 30, y - 26, W - 60, 42, 8); ctx.fill();
+            ctx.fillStyle = "#fff"; ctx.font = "bold 17px sans-serif"; ctx.textAlign = "left"; ctx.fillText(line, 50, y);
           } else {
-            ctx.fillText(line, 50, y);
+            ctx.fillStyle = "rgba(255,255,255,0.75)"; ctx.font = "16px sans-serif"; ctx.textAlign = "left";
+            if (ctx.measureText(line).width > W - 100) {
+              const half = Math.floor(line.length / 2);
+              ctx.fillText(line.slice(0, half), 50, y); ctx.fillText(line.slice(half), 50, y + 22);
+            } else { ctx.fillText(line, 50, y); }
           }
+        });
+        if (slide.badge) {
+          ctx.fillStyle = slide.badgeColor || themeColor; roundRect(ctx, 30, H - 120, W - 60, 48, 10); ctx.fill();
+          ctx.fillStyle = "#fff"; ctx.font = "bold 17px sans-serif"; ctx.textAlign = "center";
+          ctx.fillText(slide.badge, W / 2, H - 89);
         }
-      });
-
-      // バッジ
-      if (slide.badge) {
-        ctx.fillStyle = slide.badgeColor || themeColor;
-        roundRect(ctx, 30, H - 120, W - 60, 48, 10);
-        ctx.fill();
-        ctx.fillStyle = "#fff";
-        ctx.font = "bold 17px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(slide.badge, W / 2, H - 89);
       }
-    }
-
-    // フッター
-    ctx.fillStyle = "rgba(255,255,255,0.25)";
-    ctx.font = "13px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(`@${accountId}`, W / 2, H - 18);
-
-    // 下部ライン
-    ctx.fillStyle = themeColor + "66";
-    ctx.fillRect(0, H - 6, W, 6);
-    }; // drawContent end
-
-    // 背景画像がある場合
+      ctx.fillStyle = "rgba(255,255,255,0.25)"; ctx.font = "13px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText(`@${accountId}`, W / 2, H - 18);
+      ctx.fillStyle = themeColor + "66"; ctx.fillRect(0, H - 6, W, 6);
+    };
     if (useImg) {
       const img = new Image();
       img.onload = () => {
-        // 背景に画像を描画（カバーフィット）
-        ctx.fillStyle = "#0D1117";
-        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = "#0D1117"; ctx.fillRect(0, 0, W, H);
         const scale = Math.max(W / img.width, H / img.height);
-        const sw = img.width * scale;
-        const sh = img.height * scale;
-        const sx = (W - sw) / 2;
-        const sy = (H - sh) / 2;
+        const sw = img.width * scale, sh = img.height * scale;
+        const sx = (W - sw) / 2, sy = (H - sh) / 2;
         ctx.globalAlpha = bgImg && !specificImg && !autoImg ? 1.0 : 0.45;
-        ctx.drawImage(img, sx, sy, sw, sh);
-        ctx.globalAlpha = 1.0;
-        // 暗いオーバーレイ
-        ctx.fillStyle = "rgba(0,0,0,0.55)";
-        ctx.fillRect(0, 0, W, H);
+        ctx.drawImage(img, sx, sy, sw, sh); ctx.globalAlpha = 1.0;
+        ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(0, 0, W, H);
         drawContent();
       };
       img.src = useImg.url;
     } else {
-      // 背景色
-      ctx.fillStyle = "#0D1117";
-      ctx.fillRect(0, 0, W, H);
-      drawContent();
+      ctx.fillStyle = "#0D1117"; ctx.fillRect(0, 0, W, H); drawContent();
     }
-
   }, [slide, brand, themeColor, accountId, index, uploadedImages]);
 
   const download = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const canvas = canvasRef.current; if (!canvas) return;
     const link = document.createElement("a");
-    link.download = `post_${index + 1}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
+    link.download = `post_${index + 1}.png`; link.href = canvas.toDataURL("image/png"); link.click();
   };
-
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
       <canvas ref={canvasRef} style={{ width: "100%", maxWidth: 270, borderRadius: 8, border: "0.5px solid #333" }} />
-      <button onClick={download} style={{ fontSize: 11, padding: "4px 12px", background: "#1D9E75", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
-        ⬇ ダウンロード
-      </button>
+      <button onClick={download} style={{ fontSize: 11, padding: "4px 12px", background: "#1D9E75", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>⬇ ダウンロード</button>
     </div>
   );
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.arcTo(x + w, y, x + w, y + r, r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-  ctx.lineTo(x + r, y + h);
-  ctx.arcTo(x, y + h, x, y + h - r, r);
-  ctx.lineTo(x, y + r);
-  ctx.arcTo(x, y, x + r, y, r);
-  ctx.closePath();
-}
-
-// ── メインアプリ ──────────────────────────────────────
-interface UploadedImage {
-  file: File;
-  url: string;
-  placement: "auto" | "specific" | "background";
-  slideIndex?: number;
-}
-
-interface Account {
-  accountName: string; accountId: string; brandName: string; genre: string;
-  followers: string; hashtags: string; themeColor: string; postNote: string; todayContent: string;
-}
-
-interface GeneratedResult {
-  caption: string; hashtags: string; slides: SlideData[];
 }
 
 export default function App() {
   const [step, setStep] = useState(1);
   const [savedAccounts, setSavedAccounts] = useState<Account[]>(() => loadAccounts());
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
-  const [account, setAccount] = useState<Account>({
-    accountName: "", accountId: "", brandName: "", genre: "",
-    followers: "", hashtags: "", themeColor: "#E63946", postNote: "", todayContent: "",
-  });
+  const [account, setAccount] = useState<Account>({ accountName: "", accountId: "", brandName: "", genre: "", followers: "", hashtags: "", themeColor: "#E63946", postNote: "", todayContent: "" });
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
@@ -309,24 +189,25 @@ export default function App() {
 
   const stage = getStage(account.followers);
   const inputStyle: React.CSSProperties = { width: "100%", fontSize: 13, padding: "8px 10px", border: "0.5px solid #ddd", borderRadius: 8, background: "#fff", color: "#111", boxSizing: "border-box" };
+  const brand = account.brandName || account.accountName;
+
+  const handleStep1Next = () => {
+    if (account.accountName && account.accountId) {
+      saveAccount(account);
+      setSavedAccounts(loadAccounts());
+      setStep(2);
+    }
+  };
 
   const generate = async () => {
-    setLoading(true);
-    setError("");
-    setResult(null);
-
+    setLoading(true); setError(""); setResult(null);
     const msgs = ["AIがコンテンツを考えています...", "キャプションを作成中...", "ハッシュタグを最適化中...", "10枚の画像を構成中...", "仕上げています..."];
-    let mi = 0;
-    setLoadingMsg(msgs[0]);
+    let mi = 0; setLoadingMsg(msgs[0]);
     const iv = setInterval(() => { if (mi < msgs.length - 1) setLoadingMsg(msgs[++mi]); }, 1200);
-
     const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-    const brand = account.brandName || account.accountName;
     const genre = GENRES.find(g => g.id === account.genre)?.label || "";
     const template = TEMPLATES.find(t => t.id === selectedTemplate)?.label || "";
-
     const prompt = `あなたはインスタグラムの投稿専門家です。以下の情報を元に投稿コンテンツを作成してください。
-
 【アカウント情報】
 - ブランド名：${brand}
 - インスタID：@${account.accountId}
@@ -336,34 +217,14 @@ export default function App() {
 - 毎回の一言：${account.postNote || "なし"}
 - 今日伝えたいこと：${account.todayContent || "おまかせ"}
 - テンプレート：${template}
-
 以下のJSON形式のみで出力してください（他の文言不要）：
-{
-  "caption": "キャプション（1行目は「${brand}」のみ、改行含む完全なキャプション、絵文字多用）",
-  "hashtags": "ハッシュタグ30個スペース区切り",
-  "slides": [
-    {"title": "スライドタイトル", "lines": ["行1", "行2", "行3"], "badge": "バッジテキスト（任意）", "iscover": true},
-    {"title": "タイトル2", "lines": ["✅ ポイント1", "✅ ポイント2", "✅ ポイント3"], "badge": "アクション文言"},
-    ...10枚分
-  ]
-}
-
+{"caption":"キャプション（1行目は「${brand}」のみ、改行含む完全なキャプション、絵文字多用）","hashtags":"ハッシュタグ30個スペース区切り","slides":[{"title":"スライドタイトル","lines":["行1","行2","行3"],"badge":"バッジテキスト","iscover":true},{"title":"タイトル2","lines":["✅ ポイント1","✅ ポイント2","✅ ポイント3"],"badge":"アクション文言"}]}
 slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメインコンテンツ。9枚目はよくある質問。10枚目はCTA。`;
-
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model: "claude-haiku-4-5",
-          max_tokens: 3000,
-          messages: [{ role: "user", content: prompt }],
-        }),
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 3000, messages: [{ role: "user", content: prompt }] }),
       });
       const data = await res.json();
       const text = data.content?.[0]?.text || "";
@@ -375,24 +236,14 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
     } catch {
       clearInterval(iv);
       setError("生成に失敗しました。もう一度お試しください。");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const downloadAll = () => {
-    const canvases = document.querySelectorAll<HTMLCanvasElement>("canvas");
-    canvases.forEach((canvas, i) => {
-      setTimeout(() => {
-        const link = document.createElement("a");
-        link.download = `post_${i + 1}.png`;
-        link.href = canvas.toDataURL("image/png");
-        link.click();
-      }, i * 300);
+    document.querySelectorAll<HTMLCanvasElement>("canvas").forEach((canvas, i) => {
+      setTimeout(() => { const link = document.createElement("a"); link.download = `post_${i + 1}.png`; link.href = canvas.toDataURL("image/png"); link.click(); }, i * 300);
     });
   };
-
-  const brand = account.brandName || account.accountName;
 
   return (
     <div style={{ padding: "1.5rem", fontFamily: "sans-serif", maxWidth: 720, margin: "0 auto", background: "#f5f5f5", minHeight: "100vh" }}>
@@ -400,8 +251,6 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
         <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>📈 インスタ成長型投稿ジェネレーター</div>
         <div style={{ fontSize: 12, color: "#666" }}>AIがキャプション・ハッシュタグ・画像10枚を一括生成します</div>
       </div>
-
-      {/* ステップバー */}
       <div style={{ display: "flex", gap: 6, marginBottom: "1.5rem" }}>
         {["アカウント登録", "ジャンル", "内容入力", "生成結果"].map((label, i) => (
           <div key={i} style={{ flex: 1, textAlign: "center", fontSize: 10, padding: "6px 2px", borderRadius: 6, background: step === i + 1 ? account.themeColor : step > i + 1 ? "#1D9E75" : "#e0e0e0", color: step >= i + 1 ? "#fff" : "#999", fontWeight: step === i + 1 ? 500 : 400 }}>
@@ -413,50 +262,20 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
       {/* STEP 1 */}
       {step === 1 && (
         <div style={{ background: "#fff", borderRadius: 12, padding: 20 }}>
-          {/* URL自動入力 */}
           <div style={{ marginBottom: 16, padding: "12px 14px", background: "#f0f8ff", borderRadius: 10, border: "1px solid #b3d9ff" }}>
-            <label style={{ fontSize: 12, fontWeight: 500, color: "#378ADD", display: "block", marginBottom: 6 }}>
-              📱 インスタのURLを貼るだけで自動入力
-            </label>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                style={{ flex: 1, fontSize: 13, padding: "8px 10px", border: "0.5px solid #b3d9ff", borderRadius: 8, background: "#fff", color: "#111" }}
-                placeholder="https://www.instagram.com/アカウント名/"
-                onPaste={(e) => {
-                  const pasted = e.clipboardData.getData("text");
-                  const parsed = parseInstagramUrl(pasted);
-                  if (parsed) {
-                    const saved = loadAccounts().find(a => a.accountId === parsed.accountId);
-                    if (saved) {
-                      setAccount(saved);
-                    } else {
-                      setAccount(a => ({ ...a, accountId: parsed.accountId, accountName: parsed.accountName }));
-                    }
-                  }
-                }}
-                onChange={(e) => {
-                  const parsed = parseInstagramUrl(e.target.value);
-                  if (parsed) {
-                    const saved = loadAccounts().find(a => a.accountId === parsed.accountId);
-                    if (saved) {
-                      setAccount(saved);
-                    } else {
-                      setAccount(a => ({ ...a, accountId: parsed.accountId, accountName: parsed.accountName }));
-                    }
-                  }
-                }}
-              />
-            </div>
+            <label style={{ fontSize: 12, fontWeight: 500, color: "#378ADD", display: "block", marginBottom: 6 }}>📱 インスタのURLを貼るだけで自動入力</label>
+            <input style={{ width: "100%", fontSize: 13, padding: "8px 10px", border: "0.5px solid #b3d9ff", borderRadius: 8, background: "#fff", color: "#111", boxSizing: "border-box" as const }}
+              placeholder="https://www.instagram.com/アカウント名/"
+              onPaste={(e) => { const pasted = e.clipboardData.getData("text"); const parsed = parseInstagramUrl(pasted); if (parsed) { const saved = loadAccounts().find(a => a.accountId === parsed.accountId); setAccount(saved || (prev => ({ ...prev, accountId: parsed.accountId, accountName: parsed.accountName }))); } }}
+              onChange={(e) => { const parsed = parseInstagramUrl(e.target.value); if (parsed) { const saved = loadAccounts().find(a => a.accountId === parsed.accountId); if (saved) setAccount(saved); else setAccount(prev => ({ ...prev, accountId: parsed.accountId, accountName: parsed.accountName })); } }}
+            />
             <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>URLを貼ると登録済みの情報が自動で入ります（初回は手入力→次回から自動）</div>
             {savedAccounts.length > 0 && (
               <div style={{ marginTop: 10 }}>
-                <div style={{ fontSize: 11, fontWeight: 500, color: "#378ADD", marginBottom: 6 }}>保存済みアカウント（タップで選択）</div>
+                <div style={{ fontSize: 11, fontWeight: 500, color: "#378ADD", marginBottom: 6 }}>保存済みアカウント</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
                   {savedAccounts.map(a => (
-                    <div key={a.accountId} onClick={() => setAccount(a)}
-                      style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, background: account.accountId === a.accountId ? "#378ADD" : "#e8f4ff", color: account.accountId === a.accountId ? "#fff" : "#378ADD", cursor: "pointer", border: "0.5px solid #b3d9ff" }}>
-                      @{a.accountId}
-                    </div>
+                    <div key={a.accountId} onClick={() => setAccount(a)} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, background: account.accountId === a.accountId ? "#378ADD" : "#e8f4ff", color: account.accountId === a.accountId ? "#fff" : "#378ADD", cursor: "pointer", border: "0.5px solid #b3d9ff" }}>@{a.accountId}</div>
                   ))}
                 </div>
               </div>
@@ -472,9 +291,7 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
               { key: "postNote", label: "毎回入れる一言（任意）", placeholder: "例：楽天市場にて販売中！" },
             ] as { key: keyof Account; label: string; placeholder: string; req?: boolean }[]).map((f) => (
               <div key={f.key}>
-                <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>
-                  {f.label}{f.req && <span style={{ color: "#E63946", marginLeft: 2 }}>*</span>}
-                </label>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>{f.label}{f.req && <span style={{ color: "#E63946", marginLeft: 2 }}>*</span>}</label>
                 <input style={inputStyle} placeholder={f.placeholder} value={account[f.key]} onChange={(e) => setAccount(a => ({ ...a, [f.key]: e.target.value }))} />
               </div>
             ))}
@@ -488,14 +305,12 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
             </div>
             {account.followers && (
               <div style={{ padding: "8px 14px", background: getStage(account.followers).color + "15", borderRadius: 8, border: `1px solid ${getStage(account.followers).color}44` }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: getStage(account.followers).color }}>
-                  現在のステージ：{getStage(account.followers).label}（{getStage(account.followers).range}人）
-                </div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: getStage(account.followers).color }}>現在のステージ：{getStage(account.followers).label}（{getStage(account.followers).range}人）</div>
               </div>
             )}
           </div>
-          <button disabled={!account.accountName || !account.accountId}
-            style={{ width: "100%", marginTop: 20, padding: 13, background: account.accountName && account.accountId ? account.themeColor : "#ddd", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
+          <button onClick={handleStep1Next} disabled={!account.accountName || !account.accountId}
+            style={{ width: "100%", marginTop: 20, padding: 13, background: account.accountName && account.accountId ? account.themeColor : "#ddd", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: account.accountName && account.accountId ? "pointer" : "not-allowed" }}>
             次へ：ジャンル選択 →
           </button>
         </div>
@@ -539,30 +354,26 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
       {step === 3 && (
         <div style={{ background: "#fff", borderRadius: 12, padding: 20 }}>
           <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 6 }}>
-              今日伝えたいこと・キーワード（任意・空欄でもOK）
-            </label>
+            <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 6 }}>今日伝えたいこと・キーワード（任意・空欄でもOK）</label>
             <textarea style={{ ...inputStyle, minHeight: 100, resize: "vertical" as const, lineHeight: 1.6 }}
-              placeholder={`例：\n新商品の充電器を紹介したい\n価格3,980円、即日発送対応\nバイク・車・除雪機対応`}
+              placeholder={"例：\n新商品の充電器を紹介したい\n価格3,980円、即日発送対応\nバイク・車・除雪機対応"}
               value={account.todayContent}
               onChange={e => setAccount(a => ({ ...a, todayContent: e.target.value }))} />
           </div>
+
           {/* 画像アップロード */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 8 }}>
-              🖼️ 画像をアップロード（任意・最大10枚）
-            </label>
-            <label style={{ display: "inline-block", padding: "8px 16px", background: account.themeColor, color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+          <div style={{ marginBottom: 16, padding: "14px", background: "#fafafa", borderRadius: 10, border: "0.5px solid #ddd" }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: "#444", marginBottom: 10 }}>🖼️ 画像をアップロード（任意・最大10枚）</div>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", background: account.themeColor, color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
               ＋ 画像を選ぶ
               <input type="file" accept="image/*" multiple style={{ display: "none" }}
                 onChange={(e) => {
                   const files = Array.from(e.target.files || []);
-                  const newImgs = files.slice(0, 10 - uploadedImages.length).map(file => ({
-                    file, url: URL.createObjectURL(file), placement: "auto" as const,
-                  }));
+                  const newImgs = files.slice(0, 10 - uploadedImages.length).map(file => ({ file, url: URL.createObjectURL(file), placement: "auto" as const }));
                   setUploadedImages(prev => [...prev, ...newImgs].slice(0, 10));
                 }} />
             </label>
+            <div style={{ fontSize: 11, color: "#888", marginTop: 8 }}>画像を選ばなくてもAIが生成します。選んだ場合は背景に使用されます。</div>
             {uploadedImages.length > 0 && (
               <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
                 {uploadedImages.map((img, i) => (
@@ -570,10 +381,10 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
                     <div style={{ position: "relative" }}>
                       <img src={img.url} alt="" style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", display: "block" }} />
                       <button onClick={() => setUploadedImages(prev => prev.filter((_, j) => j !== i))}
-                        style={{ position: "absolute", top: 4, right: 4, width: 22, height: 22, borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                        style={{ position: "absolute", top: 4, right: 4, width: 22, height: 22, borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", cursor: "pointer", fontSize: 12 }}>✕</button>
                     </div>
                     <div style={{ padding: "8px 8px 10px" }}>
-                      <div style={{ fontSize: 11, fontWeight: 500, color: "#444", marginBottom: 6 }}>使い方</div>
+                      <div style={{ fontSize: 11, fontWeight: 500, color: "#444", marginBottom: 4 }}>使い方</div>
                       <select value={img.placement}
                         onChange={e => setUploadedImages(prev => prev.map((im, j) => j === i ? { ...im, placement: e.target.value as "auto"|"specific"|"background" } : im))}
                         style={{ width: "100%", fontSize: 11, padding: "4px 6px", border: "0.5px solid #ddd", borderRadius: 6, marginBottom: 6 }}>
@@ -585,9 +396,7 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
                         <select value={img.slideIndex ?? 0}
                           onChange={e => setUploadedImages(prev => prev.map((im, j) => j === i ? { ...im, slideIndex: parseInt(e.target.value) } : im))}
                           style={{ width: "100%", fontSize: 11, padding: "4px 6px", border: "0.5px solid #ddd", borderRadius: 6 }}>
-                          {Array.from({ length: 10 }, (_, k) => (
-                            <option key={k} value={k}>{k + 1}枚目</option>
-                          ))}
+                          {Array.from({ length: 10 }, (_, k) => (<option key={k} value={k}>{k + 1}枚目</option>))}
                         </select>
                       )}
                     </div>
@@ -602,12 +411,7 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
             <button onClick={() => setStep(2)} style={{ flex: 1, padding: 12, background: "transparent", border: "0.5px solid #ddd", borderRadius: 10, fontSize: 13, cursor: "pointer", color: "#666" }}>← 戻る</button>
             <button onClick={generate} disabled={loading}
               style={{ flex: 2, padding: 12, background: !loading ? account.themeColor : "#ddd", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              {loading ? (
-                <>
-                  <div style={{ width: 16, height: 16, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                  {loadingMsg}
-                </>
-              ) : "🤖 AIで一括生成する"}
+              {loading ? (<><div style={{ width: 16, height: 16, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />{loadingMsg}</>) : "🤖 AIで一括生成する"}
             </button>
           </div>
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -617,7 +421,6 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
       {/* STEP 4 */}
       {step === 4 && result && (
         <div>
-          {/* タブ */}
           <div style={{ display: "flex", marginBottom: 16, border: "0.5px solid #ddd", borderRadius: 8, overflow: "hidden" }}>
             {[["images", "🖼️ 画像10枚"], ["caption", "📝 キャプション"], ["hashtags", "# ハッシュタグ"]].map(([id, label], i) => (
               <div key={id} onClick={() => setActiveTab(id)}
@@ -626,25 +429,17 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
               </div>
             ))}
           </div>
-
-          {/* 画像タブ */}
           {activeTab === "images" && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <div style={{ fontSize: 13, color: "#666" }}>画像をタップしてダウンロード</div>
-                <button onClick={downloadAll} style={{ fontSize: 12, padding: "6px 14px", background: account.themeColor, color: "#fff", border: "none", borderRadius: 8, cursor: "pointer" }}>
-                  ⬇ 全部ダウンロード
-                </button>
+                <div style={{ fontSize: 13, color: "#666" }}>各画像をダウンロードできます</div>
+                <button onClick={downloadAll} style={{ fontSize: 12, padding: "6px 14px", background: account.themeColor, color: "#fff", border: "none", borderRadius: 8, cursor: "pointer" }}>⬇ 全部ダウンロード</button>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
-                {result.slides.map((slide, i) => (
-                  <ImageCard key={i} slide={slide} brand={brand} themeColor={account.themeColor} accountId={account.accountId} index={i} uploadedImages={uploadedImages} />
-                ))}
+                {result.slides.map((slide, i) => (<ImageCard key={i} slide={slide} brand={brand} themeColor={account.themeColor} accountId={account.accountId} index={i} uploadedImages={uploadedImages} />))}
               </div>
             </div>
           )}
-
-          {/* キャプションタブ */}
           {activeTab === "caption" && (
             <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px", borderBottom: "0.5px solid #eee", background: "#f8f8f8" }}>
@@ -658,8 +453,6 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
               </div>
             </div>
           )}
-
-          {/* ハッシュタグタブ */}
           {activeTab === "hashtags" && (
             <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px", borderBottom: "0.5px solid #eee", background: "#f8f8f8" }}>
@@ -673,16 +466,11 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
               </div>
             </div>
           )}
-
           <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
             <button onClick={() => { setStep(3); setResult(null); setActiveTab("images"); }}
-              style={{ flex: 1, padding: 11, background: "transparent", border: "0.5px solid #ddd", borderRadius: 10, fontSize: 12, cursor: "pointer", color: "#666" }}>
-              ← 再生成する
-            </button>
+              style={{ flex: 1, padding: 11, background: "transparent", border: "0.5px solid #ddd", borderRadius: 10, fontSize: 12, cursor: "pointer", color: "#666" }}>← 再生成する</button>
             <button onClick={() => { setStep(1); setResult(null); setSelectedTemplate(""); setActiveTab("images"); }}
-              style={{ flex: 1, padding: 11, background: account.themeColor, color: "#fff", border: "none", borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: "pointer" }}>
-              別アカウントで作る
-            </button>
+              style={{ flex: 1, padding: 11, background: account.themeColor, color: "#fff", border: "none", borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: "pointer" }}>別アカウントで作る</button>
           </div>
         </div>
       )}
