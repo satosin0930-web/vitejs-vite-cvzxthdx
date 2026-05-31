@@ -602,13 +602,13 @@ async function fetchUnsplashImage(genre: string, template: string): Promise<stri
 
 interface UnsplashPhoto { id: string; url: string; thumb: string; credit: string; }
 
-async function searchUnsplashPhotos(keyword: string, count: number = 6): Promise<UnsplashPhoto[]> {
+async function searchUnsplashPhotos(keyword: string, count: number = 12): Promise<UnsplashPhoto[]> {
   const accessKey = import.meta.env.VITE_UNSPLASH_ACCESS_KEY;
   if (!accessKey) return [];
   try {
     const query = encodeURIComponent(keyword);
     const res = await fetch(
-      `https://api.unsplash.com/search/photos?query=${query}&per_page=${count}&orientation=portrait&content_filter=high`,
+      `https://api.unsplash.com/search/photos?query=${query}&per_page=${count}&content_filter=high`,
       { headers: { Authorization: `Client-ID ${accessKey}` } }
     );
     if (!res.ok) return [];
@@ -732,13 +732,12 @@ function ImageCard({ slide, brand, themeColor, accountId, index, uploadedImages,
     };
     if(useImg){
       const img=new Image();
-      img.crossOrigin="anonymous";
+      const isSvg = typeof useImg === "string" && useImg.startsWith("data:image/svg");
+      if(!isSvg) img.crossOrigin="anonymous";
       img.onload=()=>{
         ctx.fillStyle="#0a2a22"; ctx.fillRect(0,0,W,H);
         const scale=Math.max(W/img.width,H/img.height);
         const sw=img.width*scale,sh=img.height*scale;
-        // SVG背景はそのまま、写真は暗くオーバーレイ
-        const isSvg = typeof useImg === "string" && useImg.startsWith("data:image/svg");
         ctx.globalAlpha = isSvg ? 1.0 : 0.45;
         ctx.drawImage(img,(W-sw)/2,(H-sh)/2,sw,sh);
         ctx.globalAlpha=1;
@@ -746,7 +745,11 @@ function ImageCard({ slide, brand, themeColor, accountId, index, uploadedImages,
         drawContent();
       };
       img.onerror=()=>{ ctx.fillStyle="#0a2a22"; ctx.fillRect(0,0,W,H); drawContent(); };
-      img.src = typeof useImg === "string" ? useImg : useImg;
+      // Unsplash画像はw=800&q=80&fm=jpg&fit=crop&crop=entropyを追加してCORS対応
+      const imgSrc = typeof useImg === "string" ? useImg : "";
+      img.src = (!isSvg && imgSrc.includes("unsplash.com"))
+        ? imgSrc + (imgSrc.includes("?") ? "&" : "?") + "w=800&q=80&fm=jpg&fit=crop&crop=entropy"
+        : imgSrc;
     } else { ctx.fillStyle="#0a2a22"; ctx.fillRect(0,0,W,H); drawContent(); }
   },[slide,brand,themeColor,accountId,index,uploadedImages]);
 
@@ -997,22 +1000,30 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
               {photoCandidates.length>0&&(
                 <>
                   <div style={{fontSize:11,color:"#9bbfb2",marginBottom:8,fontWeight:600}}>タップして背景画像を選択（選択した画像が全スライドの背景になります）</div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                  <div style={{fontSize:11,color:"#9bbfb2",marginBottom:6,fontWeight:600}}>
+                    全スライドの背景にする画像を選んでください（複数枚から選択可）
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
                     {photoCandidates.map(photo=>(
                       <div key={photo.id} onClick={()=>setSelectedPhoto(selectedPhoto?.id===photo.id?null:photo)}
-                        style={{position:"relative",borderRadius:12,overflow:"hidden",cursor:"pointer",border:`3px solid ${selectedPhoto?.id===photo.id?"#3ec9a0":"transparent"}`,boxShadow:selectedPhoto?.id===photo.id?"0 0 0 2px #3ec9a0":"none",transition:"all 0.2s"}}>
+                        style={{position:"relative",borderRadius:10,overflow:"hidden",cursor:"pointer",
+                          border:`3px solid ${selectedPhoto?.id===photo.id?"#3ec9a0":"transparent"}`,
+                          boxShadow:selectedPhoto?.id===photo.id?"0 0 0 2px #3ec9a0, 0 4px 12px rgba(62,201,160,0.3)":"0 2px 6px rgba(0,0,0,0.1)",
+                          transition:"all 0.2s",transform:selectedPhoto?.id===photo.id?"scale(1.03)":"scale(1)"}}>
                         <img src={photo.thumb} alt="" style={{width:"100%",aspectRatio:"1/1",objectFit:"cover",display:"block"}} />
                         {selectedPhoto?.id===photo.id&&(
-                          <div style={{position:"absolute",top:4,right:4,width:22,height:22,borderRadius:"50%",background:"#3ec9a0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#fff",fontWeight:700}}>✓</div>
+                          <div style={{position:"absolute",inset:0,background:"rgba(62,201,160,0.2)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                            <div style={{width:28,height:28,borderRadius:"50%",background:"#3ec9a0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"#fff",fontWeight:700,boxShadow:"0 2px 8px rgba(0,0,0,0.3)"}}>✓</div>
+                          </div>
                         )}
-                        <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"4px 6px",background:"rgba(0,0,0,0.5)",fontSize:9,color:"rgba(255,255,255,0.8)",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>📷 {photo.credit}</div>
+                        <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"3px 5px",background:"rgba(0,0,0,0.55)",fontSize:8,color:"rgba(255,255,255,0.85)",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>📷 {photo.credit}</div>
                       </div>
                     ))}
                   </div>
                   {selectedPhoto&&(
-                    <div style={{marginTop:8,padding:"6px 12px",background:"#f0fdf8",borderRadius:8,fontSize:12,color:"#2d9e7e",fontWeight:600,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <span>✓ 背景画像を選択中</span>
-                      <span style={{cursor:"pointer",color:"#f472b6"}} onClick={()=>setSelectedPhoto(null)}>✕ 解除</span>
+                    <div style={{marginTop:10,padding:"8px 14px",background:"linear-gradient(135deg,#f0fdf8,#f5f0ff)",borderRadius:10,fontSize:12,color:"#2d9e7e",fontWeight:600,display:"flex",justifyContent:"space-between",alignItems:"center",border:"1.5px solid #a8dfd0"}}>
+                      <span>✓ 背景画像を選択中 — 全スライドに反映されます</span>
+                      <span style={{cursor:"pointer",color:"#f472b6",fontSize:13}} onClick={()=>setSelectedPhoto(null)}>✕ 解除</span>
                     </div>
                   )}
                 </>
