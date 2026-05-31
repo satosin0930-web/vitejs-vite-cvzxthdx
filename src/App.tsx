@@ -600,6 +600,28 @@ async function fetchUnsplashImage(genre: string, template: string): Promise<stri
   } catch { return null; }
 }
 
+interface UnsplashPhoto { id: string; url: string; thumb: string; credit: string; }
+
+async function searchUnsplashPhotos(keyword: string, count: number = 6): Promise<UnsplashPhoto[]> {
+  const accessKey = import.meta.env.VITE_UNSPLASH_ACCESS_KEY;
+  if (!accessKey) return [];
+  try {
+    const query = encodeURIComponent(keyword);
+    const res = await fetch(
+      `https://api.unsplash.com/search/photos?query=${query}&per_page=${count}&orientation=portrait&content_filter=high`,
+      { headers: { Authorization: `Client-ID ${accessKey}` } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.results || []).map((p: any) => ({
+      id: p.id,
+      url: p.urls.regular,
+      thumb: p.urls.thumb,
+      credit: p.user.name,
+    }));
+  } catch { return []; }
+}
+
 function generateSvgBg(themeColor: string, genre: string): string {
   const shapes: Record<string, string> = {
     shop: `<circle cx="80%" cy="20%" r="120" fill="${themeColor}" opacity="0.15"/><rect x="10%" y="60%" width="200" height="200" rx="30" fill="${themeColor}" opacity="0.08" transform="rotate(20,200,700)"/>`,
@@ -681,15 +703,15 @@ function ImageCard({ slide, brand, themeColor, accountId, index, uploadedImages,
         // タイトルボックス
         ctx.fillStyle=themeColor+"30"; roundRect(ctx,30,66,W-60,66,14); ctx.fill();
         ctx.strokeStyle=themeColor+"60"; ctx.lineWidth=1.5; roundRect(ctx,30,66,W-60,66,14); ctx.stroke();
-        ctx.fillStyle="#fff"; ctx.font="bold 22px sans-serif"; ctx.textAlign="center";
-        ctx.fillText(slide.title,W/2,110);
+        ctx.fillStyle="#fff"; ctx.font="bold 28px sans-serif"; ctx.textAlign="center";
+        ctx.fillText(slide.title,W/2,112);
         slide.lines.forEach((line,i)=>{
           const y=190+i*52;
           if(line.startsWith("✅")||line.startsWith("💡")||line.startsWith("⭐")||line.startsWith("🔥")||line.startsWith("📌")) {
             ctx.fillStyle=themeColor+"20"; roundRect(ctx,30,y-26,W-60,42,10); ctx.fill();
-            ctx.fillStyle="#fff"; ctx.font="bold 16px sans-serif"; ctx.textAlign="left"; ctx.fillText(line,50,y);
+            ctx.fillStyle="#fff"; ctx.font="bold 20px sans-serif"; ctx.textAlign="left"; ctx.fillText(line,50,y);
           } else {
-            ctx.fillStyle="rgba(255,255,255,0.7)"; ctx.font="15px sans-serif"; ctx.textAlign="left";
+            ctx.fillStyle="rgba(255,255,255,0.8)"; ctx.font="18px sans-serif"; ctx.textAlign="left";
             if(ctx.measureText(line).width>W-100){const h=Math.floor(line.length/2);ctx.fillText(line.slice(0,h),50,y);ctx.fillText(line.slice(h),50,y+20);}
             else ctx.fillText(line,50,y);
           }
@@ -698,11 +720,11 @@ function ImageCard({ slide, brand, themeColor, accountId, index, uploadedImages,
           const badgeGrad=ctx.createLinearGradient(30,0,W-30,0);
           badgeGrad.addColorStop(0,themeColor); badgeGrad.addColorStop(1,"#a78bfa");
           ctx.fillStyle=badgeGrad; roundRect(ctx,30,H-110,W-60,46,12); ctx.fill();
-          ctx.fillStyle="#fff"; ctx.font="bold 16px sans-serif"; ctx.textAlign="center";
-          ctx.fillText(slide.badge,W/2,H-82);
+          ctx.fillStyle="#fff"; ctx.font="bold 20px sans-serif"; ctx.textAlign="center";
+          ctx.fillText(slide.badge,W/2,H-80);
         }
       }
-      ctx.fillStyle="rgba(255,255,255,0.2)"; ctx.font="12px sans-serif"; ctx.textAlign="center";
+      ctx.fillStyle="rgba(255,255,255,0.25)"; ctx.font="14px sans-serif"; ctx.textAlign="center";
       ctx.fillText(`@${accountId}`,W/2,H-16);
       const footGrad=ctx.createLinearGradient(0,0,W,0);
       footGrad.addColorStop(0,themeColor); footGrad.addColorStop(1,"#a78bfa");
@@ -759,6 +781,10 @@ export default function App() {
   const [result,setResult]=useState<GeneratedResult|null>(null);
   const [error,setError]=useState("");
   const [activeTab,setActiveTab]=useState("images");
+  const [photoKeyword,setPhotoKeyword]=useState("");
+  const [photoSearching,setPhotoSearching]=useState(false);
+  const [photoCandidates,setPhotoCandidates]=useState<UnsplashPhoto[]>([]);
+  const [selectedPhoto,setSelectedPhoto]=useState<UnsplashPhoto|null>(null);
 
   const stage=getStage(account.followers);
   const brand=account.brandName||account.accountName;
@@ -792,7 +818,7 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
       // ClaudeとUnsplashを並列取得
       const [aiRes, unsplashUrl] = await Promise.all([
         fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-haiku-4-5",max_tokens:3000,messages:[{role:"user",content:prompt}]})}),
-        uploadedImages.length === 0 ? fetchUnsplashImage(account.genre, selectedTemplate) : Promise.resolve(null),
+        (!selectedPhoto && uploadedImages.length === 0) ? fetchUnsplashImage(account.genre, selectedTemplate) : Promise.resolve(selectedPhoto?.url || null),
       ]);
       const data=await aiRes.json();
       const text=data.content?.[0]?.text||"";
@@ -938,6 +964,62 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
             <div className="field-group">
               <div className="section-title">💬 今日伝えたいこと</div>
               <textarea placeholder={"例：\n新商品の充電器を紹介したい\n価格3,980円、即日発送対応\nバイク・車・除雪機対応"} value={account.todayContent} onChange={e=>setAccount(a=>({...a,todayContent:e.target.value}))} />
+            </div>
+
+            {/* 背景画像検索 */}
+            <div style={{marginBottom:16,background:"linear-gradient(135deg,#f0fdf8,#f5f0ff)",border:"2px dashed #a8dfd0",borderRadius:16,padding:16}}>
+              <div className="section-title">🔍 背景画像を検索して選ぶ（任意）</div>
+              <div style={{display:"flex",gap:8,marginBottom:10}}>
+                <input type="text" placeholder="例：motorcycle battery, バイク, カフェ" value={photoKeyword}
+                  onChange={e=>setPhotoKeyword(e.target.value)}
+                  onKeyDown={async e=>{
+                    if(e.key==="Enter"&&photoKeyword.trim()){
+                      setPhotoSearching(true);
+                      const results=await searchUnsplashPhotos(photoKeyword.trim());
+                      setPhotoCandidates(results);
+                      setPhotoSearching(false);
+                    }
+                  }}
+                  style={{flex:1,fontSize:13,padding:"8px 12px",border:"2px solid #e8f5f0",borderRadius:10,fontFamily:"Nunito,sans-serif"}}
+                />
+                <button
+                  onClick={async()=>{
+                    if(!photoKeyword.trim()) return;
+                    setPhotoSearching(true);
+                    const results=await searchUnsplashPhotos(photoKeyword.trim());
+                    setPhotoCandidates(results);
+                    setPhotoSearching(false);
+                  }}
+                  style={{padding:"8px 16px",background:"linear-gradient(135deg,#3ec9a0,#2d9e7e)",color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"Nunito,sans-serif",whiteSpace:"nowrap"}}>
+                  {photoSearching?"検索中...":"🔍 検索"}
+                </button>
+              </div>
+              {photoCandidates.length>0&&(
+                <>
+                  <div style={{fontSize:11,color:"#9bbfb2",marginBottom:8,fontWeight:600}}>タップして背景画像を選択（選択した画像が全スライドの背景になります）</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                    {photoCandidates.map(photo=>(
+                      <div key={photo.id} onClick={()=>setSelectedPhoto(selectedPhoto?.id===photo.id?null:photo)}
+                        style={{position:"relative",borderRadius:12,overflow:"hidden",cursor:"pointer",border:`3px solid ${selectedPhoto?.id===photo.id?"#3ec9a0":"transparent"}`,boxShadow:selectedPhoto?.id===photo.id?"0 0 0 2px #3ec9a0":"none",transition:"all 0.2s"}}>
+                        <img src={photo.thumb} alt="" style={{width:"100%",aspectRatio:"1/1",objectFit:"cover",display:"block"}} />
+                        {selectedPhoto?.id===photo.id&&(
+                          <div style={{position:"absolute",top:4,right:4,width:22,height:22,borderRadius:"50%",background:"#3ec9a0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#fff",fontWeight:700}}>✓</div>
+                        )}
+                        <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"4px 6px",background:"rgba(0,0,0,0.5)",fontSize:9,color:"rgba(255,255,255,0.8)",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>📷 {photo.credit}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {selectedPhoto&&(
+                    <div style={{marginTop:8,padding:"6px 12px",background:"#f0fdf8",borderRadius:8,fontSize:12,color:"#2d9e7e",fontWeight:600,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span>✓ 背景画像を選択中</span>
+                      <span style={{cursor:"pointer",color:"#f472b6"}} onClick={()=>setSelectedPhoto(null)}>✕ 解除</span>
+                    </div>
+                  )}
+                </>
+              )}
+              {photoCandidates.length===0&&!photoSearching&&(
+                <div style={{fontSize:11,color:"#9bbfb2"}}>キーワードを入力してEnterまたは検索ボタンで画像を探せます。選ばなくてもAIが自動生成します。</div>
+              )}
             </div>
 
             <div className="upload-area">
