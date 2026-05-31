@@ -557,7 +557,73 @@ function loadAccs(): Account[] { try { return JSON.parse(localStorage.getItem(SK
 interface SlideData { title: string; lines: string[]; badge?: string; iscover?: boolean; }
 interface UploadedImage { file: File; url: string; placement: "auto"|"specific"|"background"; slideIndex?: number; }
 interface Account { accountName: string; accountId: string; brandName: string; genre: string; followers: string; hashtags: string; themeColor: string; postNote: string; todayContent: string; }
-interface GeneratedResult { caption: string; hashtags: string; slides: SlideData[]; }
+interface GeneratedResult { caption: string; hashtags: string; slides: SlideData[]; unsplashUrl?: string; }
+
+// ── 画像取得・生成 ───────────────────────────────────────
+
+const GENRE_KEYWORDS: Record<string, string[]> = {
+  shop: ["shopping","retail","store","product","market"],
+  food: ["food","cafe","coffee","restaurant","cooking"],
+  beauty: ["beauty","salon","cosmetics","skincare","makeup"],
+  craft: ["handcraft","wood","art","craft","creative"],
+  health: ["fitness","health","workout","yoga","wellness"],
+  travel: ["travel","landscape","nature","journey","adventure"],
+  education: ["education","learning","book","study","knowledge"],
+  other: ["business","lifestyle","modern","minimal","creative"],
+};
+
+const TEMPLATE_KEYWORDS: Record<string, string> = {
+  product: "product showcase",
+  review: "customer happy smiling",
+  tips: "lightbulb idea inspiration",
+  story: "story journey people",
+  campaign: "celebration sale discount",
+  lifestyle: "lifestyle minimal aesthetic",
+  behind: "behind scenes workshop",
+  qa: "conversation help support",
+};
+
+async function fetchUnsplashImage(genre: string, template: string): Promise<string|null> {
+  const accessKey = import.meta.env.VITE_UNSPLASH_ACCESS_KEY;
+  if (!accessKey) return null;
+  try {
+    const genreKw = GENRE_KEYWORDS[genre]?.[Math.floor(Math.random()*3)] || "lifestyle";
+    const templateKw = TEMPLATE_KEYWORDS[template] || "minimal";
+    const query = encodeURIComponent(`${genreKw} ${templateKw}`);
+    const res = await fetch(
+      `https://api.unsplash.com/photos/random?query=${query}&orientation=portrait&content_filter=high`,
+      { headers: { Authorization: `Client-ID ${accessKey}` } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.urls?.regular || null;
+  } catch { return null; }
+}
+
+function generateSvgBg(themeColor: string, genre: string): string {
+  const shapes: Record<string, string> = {
+    shop: `<circle cx="80%" cy="20%" r="120" fill="${themeColor}" opacity="0.15"/><rect x="10%" y="60%" width="200" height="200" rx="30" fill="${themeColor}" opacity="0.08" transform="rotate(20,200,700)"/>`,
+    food: `<circle cx="20%" cy="30%" r="100" fill="${themeColor}" opacity="0.12"/><circle cx="80%" cy="70%" r="150" fill="#a78bfa" opacity="0.08"/><circle cx="50%" cy="10%" r="60" fill="${themeColor}" opacity="0.1"/>`,
+    beauty: `<ellipse cx="70%" cy="25%" rx="140" ry="100" fill="${themeColor}" opacity="0.12"/><ellipse cx="20%" cy="75%" rx="100" ry="140" fill="#f472b6" opacity="0.1"/>`,
+    craft: `<polygon points="400,50 500,200 300,200" fill="${themeColor}" opacity="0.1"/><polygon points="100,400 200,550 0,550" fill="#a78bfa" opacity="0.08"/>`,
+    health: `<circle cx="85%" cy="15%" r="80" fill="${themeColor}" opacity="0.15"/><circle cx="15%" cy="85%" r="100" fill="${themeColor}" opacity="0.1"/><circle cx="50%" cy="50%" r="200" fill="${themeColor}" opacity="0.04"/>`,
+    travel: `<path d="M0,200 Q270,100 540,200 L540,675 L0,675 Z" fill="${themeColor}" opacity="0.08"/><circle cx="80%" cy="20%" r="90" fill="#facc15" opacity="0.1"/>`,
+    education: `<rect x="60%" y="5%" width="180" height="180" rx="20" fill="${themeColor}" opacity="0.1" transform="rotate(15)"/><rect x="5%" y="60%" width="140" height="140" rx="15" fill="#a78bfa" opacity="0.08" transform="rotate(-10)"/>`,
+    other: `<circle cx="75%" cy="25%" r="110" fill="${themeColor}" opacity="0.12"/><circle cx="25%" cy="75%" r="90" fill="#a78bfa" opacity="0.1"/>`,
+  };
+  const shape = shapes[genre] || shapes.other;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="540" height="675" viewBox="0 0 540 675">
+    <defs>
+      <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#0a2a22"/>
+        <stop offset="100%" stop-color="#12362c"/>
+      </linearGradient>
+    </defs>
+    <rect width="540" height="675" fill="url(#bg)"/>
+    ${shape}
+  </svg>`;
+  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+}
 
 // ── Canvas ────────────────────────────────────────────
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -568,7 +634,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
 }
 
-function ImageCard({ slide, brand, themeColor, accountId, index, uploadedImages }: { slide: SlideData; brand: string; themeColor: string; accountId: string; index: number; uploadedImages: UploadedImage[]; }) {
+function ImageCard({ slide, brand, themeColor, accountId, index, uploadedImages, autoImageUrl, genre }: { slide: SlideData; brand: string; themeColor: string; accountId: string; index: number; uploadedImages: UploadedImage[]; autoImageUrl?: string; genre: string; }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current; if (!canvas) return;
@@ -577,7 +643,11 @@ function ImageCard({ slide, brand, themeColor, accountId, index, uploadedImages 
     const bgImg = uploadedImages.find(img=>img.placement==="background");
     const specificImg = uploadedImages.find(img=>img.placement==="specific"&&img.slideIndex===index);
     const autoImg = uploadedImages.find(img=>img.placement==="auto");
-    const useImg = specificImg||(index>0&&index<8?autoImg:null)||bgImg;
+    // 優先順位: ユーザーアップロード > Unsplash自動取得 > SVG生成背景
+    const useUploadedImg = specificImg||(index>0&&index<8?autoImg:null)||bgImg;
+    const useAutoUrl = !useUploadedImg && autoImageUrl ? autoImageUrl : null;
+    const useSvgBg = !useUploadedImg && !useAutoUrl ? generateSvgBg(themeColor, genre) : null;
+    const useImg = useUploadedImg ? useUploadedImg.url : (useAutoUrl || useSvgBg);
     const drawContent = () => {
       // ミント系グラデ背景
       const grad = ctx.createLinearGradient(0,0,W,H);
@@ -640,16 +710,22 @@ function ImageCard({ slide, brand, themeColor, accountId, index, uploadedImages 
     };
     if(useImg){
       const img=new Image();
+      img.crossOrigin="anonymous";
       img.onload=()=>{
         ctx.fillStyle="#0a2a22"; ctx.fillRect(0,0,W,H);
         const scale=Math.max(W/img.width,H/img.height);
         const sw=img.width*scale,sh=img.height*scale;
-        ctx.globalAlpha=0.4; ctx.drawImage(img,(W-sw)/2,(H-sh)/2,sw,sh);
-        ctx.globalAlpha=1; ctx.fillStyle="rgba(10,42,34,0.6)"; ctx.fillRect(0,0,W,H);
+        // SVG背景はそのまま、写真は暗くオーバーレイ
+        const isSvg = typeof useImg === "string" && useImg.startsWith("data:image/svg");
+        ctx.globalAlpha = isSvg ? 1.0 : 0.45;
+        ctx.drawImage(img,(W-sw)/2,(H-sh)/2,sw,sh);
+        ctx.globalAlpha=1;
+        if(!isSvg){ctx.fillStyle="rgba(10,42,34,0.6)"; ctx.fillRect(0,0,W,H);}
         drawContent();
       };
-      img.src=useImg.url;
-    } else { drawContent(); }
+      img.onerror=()=>{ ctx.fillStyle="#0a2a22"; ctx.fillRect(0,0,W,H); drawContent(); };
+      img.src = typeof useImg === "string" ? useImg : useImg;
+    } else { ctx.fillStyle="#0a2a22"; ctx.fillRect(0,0,W,H); drawContent(); }
   },[slide,brand,themeColor,accountId,index,uploadedImages]);
 
   const download = () => {
@@ -713,13 +789,17 @@ export default function App() {
 {"caption":"キャプション（1行目は「${brand}」のみ、改行含む完全なキャプション、絵文字多用）","hashtags":"ハッシュタグ30個スペース区切り","slides":[{"title":"スライドタイトル","lines":["行1","行2","行3"],"badge":"バッジ","iscover":true},{"title":"タイトル2","lines":["✅ ポイント1","✅ ポイント2","✅ ポイント3"],"badge":"アクション"}]}
 slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメインコンテンツ。9枚目はよくある質問。10枚目はCTA。`;
     try {
-      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-haiku-4-5",max_tokens:3000,messages:[{role:"user",content:prompt}]})});
-      const data=await res.json();
+      // ClaudeとUnsplashを並列取得
+      const [aiRes, unsplashUrl] = await Promise.all([
+        fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-haiku-4-5",max_tokens:3000,messages:[{role:"user",content:prompt}]})}),
+        uploadedImages.length === 0 ? fetchUnsplashImage(account.genre, selectedTemplate) : Promise.resolve(null),
+      ]);
+      const data=await aiRes.json();
       const text=data.content?.[0]?.text||"";
       const clean=text.replace(/```json|```/g,"").trim();
       const parsed=JSON.parse(clean);
       clearInterval(iv);
-      setResult({caption:parsed.caption||"",hashtags:parsed.hashtags||"",slides:parsed.slides||[]});
+      setResult({caption:parsed.caption||"",hashtags:parsed.hashtags||"",slides:parsed.slides||[],unsplashUrl:unsplashUrl||undefined});
       setStep(4);
     } catch {
       clearInterval(iv);
@@ -921,7 +1001,7 @@ slidesは必ず10個。1枚目はiscover:trueで表紙。2〜8枚目はメイン
                   <button className="dl-all-btn" onClick={downloadAll}>⬇ 全部保存</button>
                 </div>
                 <div className="img-grid">
-                  {result.slides.map((slide,i)=><ImageCard key={i} slide={slide} brand={brand} themeColor={account.themeColor} accountId={account.accountId} index={i} uploadedImages={uploadedImages}/>)}
+                  {result.slides.map((slide,i)=><ImageCard key={i} slide={slide} brand={brand} themeColor={account.themeColor} accountId={account.accountId} index={i} uploadedImages={uploadedImages} autoImageUrl={result.unsplashUrl} genre={account.genre}/>)}
                 </div>
               </div>
             )}
